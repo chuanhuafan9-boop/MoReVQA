@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.idea/
+
+# Local datasets and downloaded model weights should stay outside Git.
+data/**/videos/
+data/**/*.zip
+model/
+
+# Generated outputs and demo artifacts.
+trace*.json
+*.mp4.trace.json
+*.avi.trace.json
+*.mov.trace.json
+outputs/
+examples/demo_video.mp4

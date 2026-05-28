@@ -1,0 +1,71 @@
+project:
+  name: morevqa-open-model-reproduction
+  seed: 0
+
+runtime:
+  device: auto
+  # PaliGemma 2 model cards provide bfloat16 checkpoints.
+  dtype: bfloat16
+  # Real experiments must fail loudly instead of silently using mock outputs.
+  mock_on_missing: false
+
+llm:
+  # Open replacement for the paper's closed PaLM-2:
+  # Qwen/Qwen3-30B-A3B-Instruct-2507 served through local vLLM.
+  provider: openai_compatible
+  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key: sk-7660f57651ae4f3298eeaf9101e8935c
+  model: Qwen/Qwen3-30B-A3B-Instruct-2507
+  temperature: 0.0
+  max_tokens: 1024
+  timeout: 120
+
+vision_language:
+  # Open replacement for the paper's closed PaLI-3 (5B):
+  # one shared google/paligemma2-10b-mix-448 instance is used for caption and VQA.
+  captioner:
+    provider: paligemma2
+    model_path: /home/fanchuanhua/project/MoReVQA/model/paligemma2-10b-mix-448
+    prompt: caption en
+    vqa_prefix: answer en
+    temperature: 0.0
+    max_new_tokens: 64
+  vqa:
+    provider: paligemma2
+    model_path: /home/fanchuanhua/project/MoReVQA/model/paligemma2-10b-mix-448
+    prompt: caption en
+    vqa_prefix: answer en
+    temperature: 0.0
+    max_new_tokens: 64
+
+grounding:
+  # These two roles retain the paper's reported model families.
+  detector:
+    provider: owlvit
+    model_path: /home/fanchuanhua/project/MoReVQA/model/owlvit-base-patch32
+    threshold: 0.12
+    top_k: 8
+    query_max_length: 16
+  image_text_scorer:
+    provider: openai_clip_rn50
+    model_name: /home/fanchuanhua/project/MoReVQA/model/clip-rn50/RN50.pt
+    threshold: 0.7
+  verify_top_k: 8
+  grounding_top_k: 6
+  temporal_keep_ratio: 0.4
+
+ocr:
+  # PaliGemma 2 mix supports the dedicated OCR task prefix.
+  provider: paligemma2_prompted
+  prompt: ocr
+
+video:
+  sample_fps: 1.0
+  max_frames: null
+  # Paper default for MoReVQA video-context captions.
+  context_frames: 16
+
+pipeline:
+  execute_llm_plans: true
+  save_intermediate_captions: true
+  answer_max_words: 16
