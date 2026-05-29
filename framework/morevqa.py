@@ -31,6 +31,7 @@ class MoReVQAOutput:
 class MoReVQA:
     def __init__(self, config: MoreVQAConfig, models: ModelBundle | None = None) -> None:
         self.config = config.merged_with_defaults()
+        self.verbose = self.config.bool("pipeline", "verbose", default=True)
         self.models = models or build_model_bundle(self.config)
         self.event_stage = EventParsingStage(self.models.llm, self.config)
         self.grounding_stage = GroundingStage(
@@ -73,7 +74,9 @@ class MoReVQA:
         question: str,
         options: list[str] | None = None,
     ) -> MoReVQAOutput:
+        self._log(f"[MoReVQA] 开始读取视频并抽帧: {video_path}")
         frames = self._load_frames(video_path)
+        self._log(f"[MoReVQA] 视频抽帧完成，当前送入 pipeline 的帧数: {len(frames)}")
         return self.answer_frames(frames, question, options, video_path=video_path)
 
     def answer_frames(
@@ -83,16 +86,54 @@ class MoReVQA:
         options: list[str] | None = None,
         video_path: str | Path | None = None,
     ) -> MoReVQAOutput:
+        self._log("=" * 80)
+        self._log("[MoReVQA] 开始处理一个视频问答样本")
+        self._log(f"[MoReVQA] Video: {video_path if video_path is not None else 'in-memory frames'}")
+        self._log(f"[MoReVQA] Question: {question}")
+        if options:
+            self._log(f"[MoReVQA] Candidate options: {len(options)} 个")
+
         memory = ExternalMemory(
             question=question,
             options=options,
             video_path=str(video_path) if video_path is not None else None,
             frame_ids=[frame.frame_id for frame in frames],
         )
+
+        # M1 in the paper: language-only event parsing. It rewrites the question,
+        # detects temporal hints, determines the QA type, and decides whether OCR is needed.
+        self._log("[MoReVQA][M1 Event Parsing] 开始解析问题中的事件、时序关系和问题类型")
         self.event_stage.run(memory)
+        self._log(
+            "[MoReVQA][M1 Event Parsing] 完成: "
+            f"qa_type={memory.qa_type}, temporal_hint={memory.temporal_hint or 'none'}, "
+            f"conjunction={memory.conjunction}, require_ocr={memory.require_ocr}, "
+            f"events={memory.event_queue or ['none']}"
+        )
+
+        # M2 in the paper: visual grounding. It localizes the event/object related
+        # frames with OWL-ViT, CLIP RN50, and VQA-style verification.
+        self._log("[MoReVQA][M2 Grounding] 开始定位和筛选与问题相关的视频帧")
         self.grounding_stage.run(memory, frames)
+        self._log(
+            "[MoReVQA][M2 Grounding] 完成: "
+            f"grounded_frame_ids={memory.grounded_frame_ids or memory.active_frame_ids()}, "
+            f"grounding_records={len(memory.grounding)}"
+        )
+
+        # M3 in the paper: modular visual reasoning. It generates context captions
+        # and asks targeted VQA sub-questions on the grounded frames.
+        self._log("[MoReVQA][M3 Reasoning] 开始生成上下文描述并执行视觉问答推理")
         self.reasoning_stage.run(memory, frames)
+        self._log(
+            "[MoReVQA][M3 Reasoning] 完成: "
+            f"captions={len(memory.captions)}, reasoning_outputs={len(memory.reasoning_outputs)}"
+        )
+
+        # Final prediction: the LLM reads the external memory and outputs the answer.
+        self._log("[MoReVQA][Final Prediction] 开始根据外部记忆生成最终答案")
         prediction = self.prediction_stage.run(memory)
+        self._log(f"[MoReVQA][Final Prediction] 完成: answer={prediction.answer}")
         return MoReVQAOutput(prediction=prediction, memory=memory)
 
     def _load_frames(
@@ -108,3 +149,7 @@ class MoReVQA:
         if max_frames is not None:
             frames = uniform_sample_frames(frames, int(max_frames))
         return frames
+
+    def _log(self, message: str) -> None:
+        if self.verbose:
+            print(message, flush=True)

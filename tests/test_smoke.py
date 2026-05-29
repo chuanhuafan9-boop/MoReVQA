@@ -6,7 +6,7 @@ from engine.config import MoreVQAConfig
 from engine.memory import ExternalMemory
 from engine.models.registry import build_model_bundle
 from engine.schemas import VideoFrame
-from engine.utils import ProgramGenerator, parse_action_plan
+from engine.utils import ProgramGenerator, format_action_program, parse_action_plan
 from framework.morevqa import MoReVQA
 
 
@@ -19,6 +19,18 @@ def test_parse_json_plan() -> None:
 def test_parse_code_like_plan() -> None:
     calls = parse_action_plan('trim("beginning")\nclassify("why")')
     assert [call.name for call in calls] == ["trim", "classify"]
+
+
+def test_format_action_program_uses_paper_style_calls() -> None:
+    calls = parse_action_plan(
+        '{"calls":[{"name":"parse_event","args":["none","event","question?"]},'
+        '{"name":"require_ocr","args":[false]}]}'
+    )
+
+    program = format_action_program(calls)
+
+    assert 'parse_event("none", "event", "question?")' in program
+    assert 'require_ocr("no")' in program
 
 
 def test_memory_summary() -> None:

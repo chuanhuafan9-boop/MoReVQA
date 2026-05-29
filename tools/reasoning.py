@@ -3,6 +3,7 @@ from __future__ import annotations
 from engine.memory import ExternalMemory
 from engine.models.base import OCRBackend, VisionLanguageBackend
 from engine.schemas import QARecord, VideoFrame
+from engine.utils import log_model_output, log_prompt
 from engine.video import select_frames, uniform_sample_frames
 
 
@@ -39,7 +40,10 @@ class ReasoningAPI:
         outputs: list[dict] = []
         if self.memory.require_ocr and self.ocr_model is not None:
             for frame in frames:
+                ocr_prompt = getattr(self.ocr_model, "prompt", "ocr")
+                log_prompt(f"M3 Reasoning OCR frame {frame.frame_id}", ocr_prompt)
                 text = self.ocr_model.read_text(frame)
+                log_model_output(f"M3 Reasoning OCR frame {frame.frame_id}", text)
                 if text:
                     record = QARecord(
                         question="OCR visible text",
@@ -57,7 +61,9 @@ class ReasoningAPI:
                     )
         for question in questions:
             for frame in frames:
+                log_prompt(f"M3 Reasoning targeted VQA frame {frame.frame_id}", question)
                 answer = self.vqa_model.answer(frame, question)
+                log_model_output(f"M3 Reasoning targeted VQA frame {frame.frame_id}", answer)
                 record = QARecord(
                     question=question,
                     answer=answer,

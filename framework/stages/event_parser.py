@@ -3,7 +3,13 @@ from __future__ import annotations
 import re
 
 from engine.config import MoreVQAConfig
-from engine.utils import ProgramGenerator, ProgramInterpreter
+from engine.utils import (
+    ProgramGenerator,
+    ProgramInterpreter,
+    log_api_program,
+    log_model_output,
+    log_prompt,
+)
 from engine.memory import ExternalMemory
 from engine.models.base import LLMBackend
 from engine.schemas import ActionCall
@@ -21,12 +27,29 @@ class EventParsingStage:
 
     def run(self, memory: ExternalMemory) -> ExternalMemory:
         prompt = build_event_prompt(memory)
+        log_prompt("M1 Event Parsing LLM tool-plan", prompt)
+        print(
+            "[MoReVQA][M1 Event Parsing] 正在请求 LLM 生成事件解析工具计划...",
+            flush=True,
+        )
         calls, raw = self.generator.generate(prompt)
+        log_model_output("M1 Event Parsing LLM tool-plan", raw)
+        log_api_program("M1 Event Parsing parsed program", calls)
+        print(
+            f"[MoReVQA][M1 Event Parsing] LLM 返回完成，解析到 {len(calls)} 个工具调用",
+            flush=True,
+        )
         if not calls:
+            print(
+                "[MoReVQA][M1 Event Parsing] LLM 未返回可执行工具调用，使用启发式事件解析计划",
+                flush=True,
+            )
             calls = heuristic_event_plan(memory.question)
             raw = "heuristic_event_plan"
+            log_api_program("M1 Event Parsing heuristic program", calls)
         memory.set_plan(self.stage_name, calls, raw)
         api = EventParsingAPI(memory, keep_ratio=self.keep_ratio)
+        print("[MoReVQA][M1 Event Parsing] 开始执行事件解析工具计划", flush=True)
         self.interpreter.execute(self.stage_name, calls, api, memory)
         return memory
 

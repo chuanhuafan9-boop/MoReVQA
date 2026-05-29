@@ -367,3 +367,59 @@ python -m pytest -q
 | LLM 部署 | [vLLM OpenAI-compatible Server](https://docs.vllm.ai/en/latest/serving/openai_compatible_server/) |
 | Grounding | [google/owlvit-base-patch32](https://huggingface.co/google/owlvit-base-patch32) |
 | Matching | [openai/CLIP](https://github.com/openai/CLIP) |
+
+## NExT-QA 批量运行
+
+本项目现在提供了和 CLOVA 任务 demo 类似的 NExT-QA 数据读取方式。目录保持为：
+
+```text
+data/nextqa/
+  annotations/
+    map_vid_vidorID.json
+    train.csv
+    val.csv
+    test.csv
+  videos/
+    0000/
+      *.mp4
+    0001/
+      *.mp4
+```
+
+`Datasets.loaders.NextQADataset` 会读取 `annotations/{split}.csv`，再通过 `map_vid_vidorID.json` 找到 `videos/<子目录>/<video_id>.mp4`。你可以用 `data_num` 控制一次传给 MoReVQA pipeline 的请求数量。
+
+### PyCharm 直接运行
+
+打开根目录的 `nextqa_demo.py`，修改顶部变量：
+
+```python
+SPLIT = "val"
+REQUEST_NUM = 5
+START_INDEX = 0
+INTERVAL = 1
+SKIP_MISSING_VIDEOS = True
+FORCE_MOCK = False
+```
+
+然后右键 `nextqa_demo.py`，点击 Run。结果会写入：
+
+```text
+outputs/nextqa_val_predictions.jsonl
+outputs/nextqa_val_traces/
+```
+
+### 命令行运行
+
+只跑验证集前 10 条：
+
+```powershell
+python -m morevqa.cli --dataset nextqa --config configs/LLM_config.yaml --data-root data/nextqa --split val --num-samples 10 --output outputs/nextqa_val_predictions.jsonl --trace-dir outputs/nextqa_val_traces
+```
+
+从第 100 条开始，每隔 5 条取一个样本，总共跑 20 个请求：
+
+```powershell
+python -m morevqa.cli --dataset nextqa --config configs/LLM_config.yaml --data-root data/nextqa --split val --start-index 100 --interval 5 --num-samples 20 --output outputs/nextqa_val_sparse_predictions.jsonl
+```
+
+如果你要严格检查视频是否完整，可以加上 `--keep-missing-videos`，这样找不到视频时会直接报错，而不是跳过该样本。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Any
 
 from engine.models.base import (
@@ -22,6 +23,9 @@ class OpenAICompatibleLLM(LLMBackend):
         temperature: float = 0.0,
         max_tokens: int = 1024,
         timeout: int = 120,
+        extra_body: dict[str, Any] | None = None,
+        client: str = "requests",
+        proxy_url: str | None = None,
     ) -> None:
         self.api_base = api_base.rstrip("/")
         self.model = model
@@ -29,26 +33,125 @@ class OpenAICompatibleLLM(LLMBackend):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.extra_body = dict(extra_body or {})
+        self.client = str(client or "requests").lower()
+        self.proxy_url = _normalize_optional_text(proxy_url)
 
     def generate(self, prompt: str, system: str | None = None) -> str:
+        if self.client in {"openai", "openai_sdk", "sdk"}:
+            return self._generate_with_openai_sdk(prompt, system=system)
+        return self._generate_with_requests(prompt, system=system)
+
+    def _generate_with_openai_sdk(self, prompt: str, system: str | None = None) -> str:
+        from openai import OpenAI
+
+        try:
+            import httpx
+        except ImportError as exc:
+            raise RuntimeError(
+                "OpenAI SDK transport requires httpx. Install dependencies with "
+                "`pip install -r requirements.txt`."
+            ) from exc
+
+        print(
+            "[LLM] 使用 OpenAI SDK 调用百炼兼容接口: "
+            f"model={self.model}, base_url={self.api_base}, timeout={self.timeout}s, "
+            f"proxy={'enabled' if self.proxy_url else 'disabled'}",
+            flush=True,
+        )
+        started = time.perf_counter()
+        messages = self._build_messages(prompt, system)
+        http_client = self._build_httpx_client(httpx)
+        client_kwargs: dict[str, Any] = {
+            "api_key": self.api_key,
+            "base_url": self.api_base,
+            "timeout": float(self.timeout),
+        }
+        if http_client is not None:
+            client_kwargs["http_client"] = http_client
+        client = OpenAI(**client_kwargs)
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                extra_body=self.extra_body or None,
+            )
+            elapsed = time.perf_counter() - started
+            print(f"[LLM] 请求完成，用时 {elapsed:.2f}s", flush=True)
+            return (response.choices[0].message.content or "").strip()
+        except Exception as exc:
+            raise RuntimeError(f"OpenAI-compatible LLM request failed: {exc}") from exc
+        finally:
+            client.close()
+
+    def _generate_with_requests(self, prompt: str, system: str | None = None) -> str:
         import requests
 
         url = f"{self.api_base}/chat/completions"
+        print(
+            "[LLM] 使用 requests 调用 OpenAI-compatible 接口: "
+            f"model={self.model}, url={url}, timeout={self.timeout}s, "
+            f"proxy={'enabled' if self.proxy_url else 'disabled'}",
+            flush=True,
+        )
+        started = time.perf_counter()
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+        messages = self._build_messages(prompt, system)
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
-        response.raise_for_status()
+        # DashScope/Bailian accepts OpenAI-compatible payloads and also model-specific
+        # fields such as enable_thinking. OpenAI SDK calls this parameter extra_body;
+        # because we send raw HTTP here, these fields must be merged into the JSON body.
+        payload.update(self.extra_body)
+        request_kwargs: dict[str, Any] = {
+            "headers": headers,
+            "json": payload,
+            "timeout": self.timeout,
+        }
+        if self.proxy_url:
+            request_kwargs["proxies"] = {"http": self.proxy_url, "https": self.proxy_url}
+        try:
+            response = requests.post(url, **request_kwargs)
+        except requests.Timeout as exc:
+            raise TimeoutError(
+                f"LLM request timed out after {self.timeout}s: model={self.model}, url={url}"
+            ) from exc
+        except requests.RequestException as exc:
+            raise RuntimeError(f"LLM request failed before receiving a response: {exc}") from exc
+
+        status_code = int(getattr(response, "status_code", 200))
+        if status_code >= 400:
+            body_preview = response.text[:1000]
+            raise RuntimeError(
+                "LLM request returned an error: "
+                f"status={status_code}, model={self.model}, body={body_preview}"
+            )
         data = response.json()
+        elapsed = time.perf_counter() - started
+        print(f"[LLM] 请求完成，用时 {elapsed:.2f}s", flush=True)
         return data["choices"][0]["message"]["content"].strip()
+
+    def _build_messages(self, prompt: str, system: str | None = None) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
+    def _build_httpx_client(self, httpx: Any) -> Any | None:
+        timeout = httpx.Timeout(float(self.timeout), connect=min(15.0, float(self.timeout)))
+        if not self.proxy_url:
+            return httpx.Client(timeout=timeout, trust_env=True)
+        try:
+            return httpx.Client(proxies=self.proxy_url, timeout=timeout, trust_env=False)
+        except TypeError:
+            return httpx.Client(proxy=self.proxy_url, timeout=timeout, trust_env=False)
 
 
 class TransformersLLM(LLMBackend):
@@ -166,6 +269,7 @@ class PaliGemma2VisionLanguageModel(VisionLanguageBackend):
     def _generate(self, frame: VideoFrame, prompt: str) -> str:
         import torch
 
+        prompt = _ensure_image_token(prompt)
         inputs = self.processor(text=prompt, images=frame.image, return_tensors="pt")
         inputs = inputs.to(self.model.device)
         for key, value in inputs.items():
@@ -454,6 +558,22 @@ def _resolve_device(device: str, torch: Any) -> str:
     if str(device).lower() in {"auto", "", "none"}:
         return "cuda" if torch.cuda.is_available() else "cpu"
     return str(device)
+
+
+def _normalize_optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"none", "null", "~"}:
+        return None
+    return text
+
+
+def _ensure_image_token(prompt: str) -> str:
+    prompt = str(prompt).strip()
+    if prompt.startswith("<image>"):
+        return prompt
+    return f"<image> {prompt}".strip()
 
 
 def _resolve_torch_dtype(dtype: str) -> Any:

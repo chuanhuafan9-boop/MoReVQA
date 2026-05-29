@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from engine.config import MoreVQAConfig
-from engine.utils import ProgramGenerator, ProgramInterpreter
+from engine.utils import (
+    ProgramGenerator,
+    ProgramInterpreter,
+    log_api_program,
+    log_model_output,
+    log_prompt,
+)
 from engine.memory import ExternalMemory
 from engine.models.base import LLMBackend, OCRBackend, VisionLanguageBackend
 from engine.schemas import ActionCall, CaptionRecord, VideoFrame
@@ -30,12 +36,26 @@ class ReasoningStage:
         self.max_frames_per_question = config.int("grounding", "verify_top_k", default=8)
 
     def run(self, memory: ExternalMemory, frames: list[VideoFrame]) -> ExternalMemory:
+        print(
+            f"[MoReVQA][M3 Reasoning] 开始为 {self.context_frames} 个上下文帧生成 caption",
+            flush=True,
+        )
         self._add_video_context(memory, frames)
         prompt = build_reasoning_prompt(memory)
+        log_prompt("M3 Reasoning LLM tool-plan", prompt)
+        print("[MoReVQA][M3 Reasoning] 正在请求 LLM 生成 reasoning 工具计划...", flush=True)
         calls, raw = self.generator.generate(prompt)
+        log_model_output("M3 Reasoning LLM tool-plan", raw)
+        log_api_program("M3 Reasoning parsed program", calls)
+        print(
+            f"[MoReVQA][M3 Reasoning] LLM 返回完成，解析到 {len(calls)} 个工具调用",
+            flush=True,
+        )
         if not calls:
+            print("[MoReVQA][M3 Reasoning] LLM 未返回可执行工具调用，使用启发式 reasoning 计划", flush=True)
             calls = heuristic_reasoning_plan(memory)
             raw = "heuristic_reasoning_plan"
+            log_api_program("M3 Reasoning heuristic program", calls)
         memory.set_plan(self.stage_name, calls, raw)
         api = ReasoningAPI(
             memory=memory,
@@ -44,6 +64,7 @@ class ReasoningStage:
             ocr_model=self.ocr_model,
             max_frames_per_question=self.max_frames_per_question,
         )
+        print("[MoReVQA][M3 Reasoning] 开始执行 reasoning 工具计划", flush=True)
         self.interpreter.execute(self.stage_name, calls, api, memory)
         return memory
 
@@ -53,7 +74,12 @@ class ReasoningStage:
         for frame in context_frames:
             if ("context", frame.frame_id) in seen:
                 continue
+            caption_prompt = getattr(self.captioner, "caption_prompt", "caption en")
+            print("\n")
+            log_prompt(f"M3 Reasoning context caption frame {frame.frame_id}", caption_prompt)
+            print("\n")
             caption = self.captioner.caption(frame)
+            log_model_output(f"M3 Reasoning context caption frame {frame.frame_id}", caption)
             memory.add_caption(
                 CaptionRecord(
                     frame_id=frame.frame_id,

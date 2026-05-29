@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from engine.config import MoreVQAConfig
-from engine.utils import ProgramGenerator, ProgramInterpreter
+from engine.utils import (
+    ProgramGenerator,
+    ProgramInterpreter,
+    log_api_program,
+    log_model_output,
+    log_prompt,
+)
 from engine.memory import ExternalMemory
 from engine.models.base import (
     DetectorBackend,
@@ -34,10 +40,20 @@ class GroundingStage:
 
     def run(self, memory: ExternalMemory, frames: list[VideoFrame]) -> ExternalMemory:
         prompt = build_grounding_prompt(memory)
+        log_prompt("M2 Grounding LLM tool-plan", prompt)
+        print("[MoReVQA][M2 Grounding] 正在请求 LLM 生成 grounding 工具计划...", flush=True)
         calls, raw = self.generator.generate(prompt)
+        log_model_output("M2 Grounding LLM tool-plan", raw)
+        log_api_program("M2 Grounding parsed program", calls)
+        print(
+            f"[MoReVQA][M2 Grounding] LLM 返回完成，解析到 {len(calls)} 个工具调用",
+            flush=True,
+        )
         if not calls:
+            print("[MoReVQA][M2 Grounding] LLM 未返回可执行工具调用，使用启发式 grounding 计划", flush=True)
             calls = heuristic_grounding_plan(memory)
             raw = "heuristic_grounding_plan"
+            log_api_program("M2 Grounding heuristic program", calls)
         memory.set_plan(self.stage_name, calls, raw)
         api = GroundingAPI(
             memory=memory,
@@ -47,6 +63,7 @@ class GroundingStage:
             vqa_model=self.vqa_model,
             top_k=self.top_k,
         )
+        print("[MoReVQA][M2 Grounding] 开始执行 grounding 工具计划", flush=True)
         self.interpreter.execute(self.stage_name, calls, api, memory)
         if not memory.grounded_frame_ids and memory.frame_ids:
             middle = memory.frame_ids[len(memory.frame_ids) // 2]

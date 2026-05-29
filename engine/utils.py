@@ -28,6 +28,36 @@ class ProgramGenerator:
         return parse_action_plan(raw_program), raw_program
 
 
+def log_prompt(label: str, prompt: str) -> None:
+    """Print an exact model prompt block before sending it to a model."""
+
+    print(f"==================={label} prompt start==================", flush=True)
+    print(prompt, flush=True)
+    print(f"==================={label} prompt end==================", flush=True)
+
+
+def log_model_output(label: str, output: str) -> None:
+    """Print the raw model output before parsing or post-processing it."""
+
+    print(f"==================={label} model output start==================", flush=True)
+    print(output, flush=True)
+    print(f"==================={label} model output end==================", flush=True)
+
+
+def log_api_program(label: str, actions: list[ActionCall]) -> None:
+    """Print parsed tool calls in the paper-style API-call program format."""
+
+    print(f"==================={label} API calls start==================", flush=True)
+    print(format_action_program(actions), flush=True)
+    print(f"==================={label} API calls end==================", flush=True)
+
+
+def format_action_program(actions: list[ActionCall]) -> str:
+    if not actions:
+        return "# no executable API calls"
+    return "\n".join(_format_action_call(action) for action in actions)
+
+
 class ProgramInterpreter:
     """Execute one generated module program against exposed tools."""
 
@@ -91,6 +121,29 @@ def execute_actions(
             if strict:
                 raise
     return outputs
+
+
+def _format_action_call(action: ActionCall) -> str:
+    args = [_format_action_arg(action.name, value) for value in action.args]
+    kwargs = [
+        f"{name}={_format_action_arg(action.name, value)}"
+        for name, value in action.kwargs.items()
+    ]
+    return f"{action.name}({', '.join(args + kwargs)})"
+
+
+def _format_action_arg(tool_name: str, value: Any) -> str:
+    if tool_name == "require_ocr" and isinstance(value, bool):
+        return json.dumps("yes" if value else "no", ensure_ascii=False)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if value is None:
+        return "None"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(to_jsonable(value), ensure_ascii=False)
 
 
 def _extract_json(text: str) -> Any | None:

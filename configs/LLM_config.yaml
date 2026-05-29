@@ -13,12 +13,19 @@ llm:
   # Open replacement for the paper's closed PaLM-2:
   # Qwen/Qwen3-30B-A3B-Instruct-2507 served through local vLLM.
   provider: openai_compatible
-  api_base: http://127.0.0.1:8000/v1
-  api_key: EMPTY
-  model: Qwen/Qwen3-30B-A3B-Instruct-2507
+  # Use the same transport style as the verified CLOVA Qwen invoke script.
+  client: openai
+  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key: sk-7660f57651ae4f3298eeaf9101e8935c
+  model: qwen3-30b-a3b-instruct-2507
   temperature: 0.0
   max_tokens: 1024
   timeout: 120
+  # If your server needs a proxy to access Bailian, copy the proxy_url from the
+  # working CLOVA config here, for example: http://127.0.0.1:7890
+  proxy_url: http://10.203.230.177:7897
+  extra_body:
+    enable_thinking: false
 
 vision_language:
   # Open replacement for the paper's closed PaLI-3 (5B):

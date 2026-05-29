@@ -3,6 +3,7 @@ from __future__ import annotations
 from engine.memory import ExternalMemory
 from engine.models.base import DetectorBackend, ImageTextScorerBackend, VisionLanguageBackend
 from engine.schemas import Detection, GroundingRecord, VideoFrame
+from engine.utils import log_model_output, log_prompt
 from engine.video import select_frames
 
 
@@ -29,6 +30,7 @@ class GroundingAPI:
 
     def localize(self, query: str, top_k: int | None = None) -> dict:
         query = str(query).strip()
+        log_prompt("M2 Grounding localization text query", query)
         top_k = self.top_k if top_k is None else int(top_k)
         frames = select_frames(self.frames, self.memory.frame_ids)
         all_detections: list[Detection] = []
@@ -61,10 +63,13 @@ class GroundingAPI:
         scores: dict[int, float] = {}
         for frame in frames:
             text_score = self.image_text_scorer.score(frame, action)
+            vqa_prompt = f"Is the following event visible: {action}? Answer yes or no."
+            log_prompt(f"M2 Grounding action verification VQA frame {frame.frame_id}", vqa_prompt)
             answer = self.vqa_model.answer(
                 frame,
-                f"Is the following event visible: {action}? Answer yes or no.",
+                vqa_prompt,
             )
+            log_model_output(f"M2 Grounding action verification VQA frame {frame.frame_id}", answer)
             yes_bonus = 0.35 if _is_yes(answer) else 0.0
             scores[frame.frame_id] = min(1.0, text_score + yes_bonus)
         ranked = _top_frame_ids(scores, top_k)

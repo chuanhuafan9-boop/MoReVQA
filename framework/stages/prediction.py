@@ -7,6 +7,7 @@ from engine.config import MoreVQAConfig
 from engine.memory import ExternalMemory
 from engine.models.base import LLMBackend
 from engine.schemas import PredictionResult
+from engine.utils import log_model_output, log_prompt
 from prompts.prompt_engineering import build_prediction_prompt
 
 
@@ -19,7 +20,11 @@ class PredictionStage:
 
     def run(self, memory: ExternalMemory) -> PredictionResult:
         prompt = build_prediction_prompt(memory)
+        log_prompt("Final Prediction LLM answer", prompt)
+        print("[MoReVQA][Final Prediction] 正在请求 LLM 生成最终答案...", flush=True)
         raw = self.llm.generate(prompt)
+        log_model_output("Final Prediction LLM answer", raw)
+        print("[MoReVQA][Final Prediction] LLM 返回完成，开始后处理答案", flush=True)
         answer = self._postprocess(raw, memory)
         result = PredictionResult(answer=answer, raw_response=raw)
         memory.add_trace(self.stage_name, "prediction", result)

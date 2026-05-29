@@ -139,6 +139,9 @@ def _build_llm(config: MoreVQAConfig, device: str, dtype: str, force_mock: bool)
             temperature=float(section.get("temperature", 0.0)),
             max_tokens=int(section.get("max_tokens", 1024)),
             timeout=int(section.get("timeout", 120)),
+            extra_body=dict(section.get("extra_body", {}) or {}),
+            client=_text(section.get("client", "requests")),
+            proxy_url=_optional_text(section.get("proxy_url")),
         )
     if provider in {"transformers", "hf", "local_transformers"}:
         return TransformersLLM(
@@ -223,6 +226,15 @@ def _build_ocr(section: dict, vqa_model: VisionLanguageBackend) -> OCRBackend:
 
 def _text(value: object) -> str:
     return os.path.expandvars(str(value))
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = os.path.expandvars(str(value)).strip()
+    if not text or text.lower() in {"none", "null", "~"}:
+        return None
+    return text
 
 
 def _same_paligemma_model(captioner: dict, vqa: dict) -> bool:

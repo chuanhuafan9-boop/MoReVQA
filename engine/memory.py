@@ -14,22 +14,30 @@ from engine.schemas import (
 
 @dataclass
 class ExternalMemory:
-    """Shared state used by all MoReVQA stages."""
+    """Shared state passed through M1, M2, M3, and final prediction."""
 
     question: str
     options: list[str] | None = None
     video_path: str | None = None
     frame_ids: list[int] = field(default_factory=list)
+
+    # M1 Event Parsing fills these language-only fields.
     working_question: str | None = None
     temporal_hint: str | None = None
     conjunction: str = "none"
     qa_type: str = "unknown"
-    require_ocr: bool = False#是否需要读取文字
+    require_ocr: bool = False
     event_queue: list[str] = field(default_factory=list)
+
+    # M2 Grounding stores the frames and visual evidence selected for reasoning.
     grounded_frame_ids: list[int] = field(default_factory=list)
-    captions: list[CaptionRecord] = field(default_factory=list)
     grounding: list[GroundingRecord] = field(default_factory=list)
+
+    # M3 Reasoning stores context captions and targeted VQA sub-question answers.
+    captions: list[CaptionRecord] = field(default_factory=list)
     reasoning_outputs: list[QARecord] = field(default_factory=list)
+
+    # Program plans and traces are saved so every paper stage can be inspected later.
     plans: dict[str, list[ActionCall]] = field(default_factory=dict)
     raw_plans: dict[str, str] = field(default_factory=dict)
     traces: list[dict[str, Any]] = field(default_factory=list)
