@@ -21,6 +21,16 @@ def test_parse_code_like_plan() -> None:
     assert [call.name for call in calls] == ["trim", "classify"]
 
 
+def test_unparseable_single_line_plan_does_not_recurse() -> None:
+    calls = parse_action_plan("Here is the reasoning plan:")
+    assert calls == []
+
+
+def test_mixed_code_like_plan_skips_unparseable_lines() -> None:
+    calls = parse_action_plan('Here is the plan:\ntrim("beginning")\nDone.')
+    assert [call.name for call in calls] == ["trim"]
+
+
 def test_format_action_program_uses_paper_style_calls() -> None:
     calls = parse_action_plan(
         '{"calls":[{"name":"parse_event","args":["none","event","question?"]},'

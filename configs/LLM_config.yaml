@@ -16,14 +16,14 @@ llm:
   # Use the same transport style as the verified CLOVA Qwen invoke script.
   client: openai
   api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
-  api_key: sk-7660f57651ae4f3298eeaf9101e8935c
+  api_key: sk-2b99c6a37a8b4140b0954f9b2d1620a2
   model: qwen3-30b-a3b-instruct-2507
   temperature: 0.0
   max_tokens: 1024
-  timeout: 120
+  timeout: 200
   # If your server needs a proxy to access Bailian, copy the proxy_url from the
   # working CLOVA config here, for example: http://127.0.0.1:7890
-  proxy_url: http://10.203.230.177:7897
+  proxy_url: http://10.203.148.97:7897
   extra_body:
     enable_thinking: false
 
@@ -34,13 +34,13 @@ vision_language:
     provider: paligemma2
     model_path: /home/fanchuanhua/project/MoReVQA/model/paligemma2-10b-mix-448
     prompt: caption en
-    vqa_prefix: answer en
+    vqa_prefix: describe en
     temperature: 0.0
     max_new_tokens: 64
   vqa:
     provider: paligemma2
     model_path: /home/fanchuanhua/project/MoReVQA/model/paligemma2-10b-mix-448
-    prompt: caption en
+    prompt: describe en
     vqa_prefix: answer en
     temperature: 0.0
     max_new_tokens: 64

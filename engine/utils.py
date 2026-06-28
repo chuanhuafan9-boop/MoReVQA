@@ -242,6 +242,8 @@ def _actions_from_code_like(text: str) -> list[ActionCall]:
         tree = ast.parse(code)
     except SyntaxError:
         lines = [line.strip() for line in code.splitlines() if line.strip()]
+        if len(lines) <= 1:
+            return []
         for line in lines:
             try:
                 calls.extend(_actions_from_code_like(line))
