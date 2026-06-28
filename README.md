@@ -172,6 +172,7 @@ configs/LLM_config.yaml
 
 ### 5.1 `llm`
 
+替换自己的 api-key
 `llm` 部分负责调用 Qwen，替代论文中的 PaLM-2。
 
 示例：
