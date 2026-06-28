@@ -16,7 +16,7 @@ llm:
   # Use the same transport style as the verified CLOVA Qwen invoke script.
   client: openai
   api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
-  api_key: sk-2b99c6a37a8b4140b0954f9b2d1620a2
+  api_key: yourself-api-key
   model: qwen3-30b-a3b-instruct-2507
   temperature: 0.0
   max_tokens: 1024
